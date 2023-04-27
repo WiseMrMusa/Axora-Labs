@@ -17,7 +17,7 @@ contract MasterChefTest is Test {
         masterchef = new MasterChef(token, address(this), 1000, block.timestamp);
         token.owner();
         token.transferOwnership(address(masterchef));
-        token.owner();
+        console.log(token.owner());
     }
 
     function testAdd() public {
@@ -71,19 +71,24 @@ contract MasterChefTest is Test {
         masterchef.pendingAxora(0, address(this));
     }
 
-    function testMaliciousDeposit() public {
+    function testMultipleDepositAndClaim() public {
         testDeposit();
+        masterchef.pendingAxora(0, address(this));
         vm.warp(block.timestamp + 604800);
         vm.startPrank(address(0x01));
         token.mint(200);
         token.approve(address(masterchef), 100);
         masterchef.deposit(0, 100);
         masterchef.pendingAxora(0, address(this));
-        vm.warp(block.timestamp + 5);
-        masterchef.withdraw(0, 100);
+        masterchef.pendingAxora(0, address(0x01));
+        masterchef.poolInfo(0);
+        vm.warp(block.timestamp + 1);
+        masterchef.pendingAxora(0, address(0x01));
         masterchef.pendingAxora(0, address(this));
         vm.stopPrank();
         masterchef.withdraw(0, 50);
+        vm.prank(address(0x01));
+        masterchef.withdraw(0, 100);
         token.balanceOf(address(masterchef));
 
     }
