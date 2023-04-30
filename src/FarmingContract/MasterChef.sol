@@ -8,6 +8,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "../../test/MasterChefTest/TestToken.sol";
 
 
+
 // MasterChef is the master of Cake. He can make Cake and he is a fair guy.
 //
 // Note that it's ownable and the owner wields tremendous power. The ownership
@@ -22,15 +23,16 @@ contract MasterChef is Ownable {
     // Info of each user.
     struct UserInfo {
         uint256 amount; // How many LP tokens the user has provided.
-        uint256 rewardDebt; // Reward debt. See explanation below.
+        uint256 lastInteracted; // Last time user deposited or withdrew
+        uint256 rewardAccrued; // Share indicating the user's share of pool reward
         //
         // We do some fancy math here. Basically, any point in time, the amount of CAKEs
         // entitled to a user but is pending to be distributed is:
         //
-        //   pending reward = (user.amount * pool.accAxoraPerShare) - user.rewardDebt
+        //   pending reward = (user.amount * pool.accAxoraReward) - user.rewardDebt
         //
         // Whenever a user deposits or withdraws LP tokens to a pool. Here's what happens:
-        //   1. The pool's `accAxoraPerShare` (and `lastRewardBlock`) gets updated.
+        //   1. The pool's `accAxoraReward` (and `lastRewardBlock`) gets updated.
         //   2. User receives the pending reward sent to his/her address.
         //   3. User's `amount` gets updated.
         //   4. User's `rewardDebt` gets updated.
@@ -41,7 +43,8 @@ contract MasterChef is Ownable {
         IERC20 lpToken; // Address of LP token contract.
         uint256 allocPoint; // How many allocation points assigned to this pool. CAKEs to distribute per block.
         uint256 lastRewardBlock; // Last block number that CAKEs distribution occurs.
-        uint256 accAxoraPerShare; // Accumulated CAKEs per share, times 1e12. See below.
+        uint256 accAxoraReward; // Accumulated CAKEs per share, times 1e12. See below.
+        uint256 totalDepositors; // Total number of people that have deposited
     }
 
     // The Axora TOKEN!
@@ -85,7 +88,7 @@ contract MasterChef is Ownable {
         BONUS_MULTIPLIER = multiplierNumber;
     }
 
-    function poolLength() external view returns (uint256) {
+    function poolLength() public view returns (uint256) {
         return poolInfo.length;
     }
 
@@ -96,14 +99,20 @@ contract MasterChef is Ownable {
         IERC20 _lpToken,
         bool _withUpdate
     ) public onlyOwner {
+
         if (_withUpdate) {
             massUpdatePools();
         }
         uint256 lastRewardBlock = block.timestamp > startBlock ? block.timestamp : startBlock;
         totalAllocPoint = totalAllocPoint.add(_allocPoint);
-        poolInfo.push(
-            PoolInfo({lpToken: _lpToken, allocPoint: _allocPoint, lastRewardBlock: lastRewardBlock, accAxoraPerShare: 0})
-        );
+
+        poolInfo.push(PoolInfo({
+            lpToken : _lpToken,
+            allocPoint : _allocPoint,
+            lastRewardBlock : lastRewardBlock,
+            accAxoraReward : 0,
+            totalDepositors : 0
+        }));
         updateTotalAllocPoint();
     }
 
@@ -167,7 +176,7 @@ contract MasterChef is Ownable {
         uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.timestamp);
         uint256 poolAxoraReward = multiplier.mul(axoraPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
         axora.mint(poolAxoraReward);
-        pool.accAxoraPerShare = pool.accAxoraPerShare.add(poolAxoraReward.mul(1e12).div(lpSupply));
+        pool.accAxoraReward = poolAxoraReward;
         pool.lastRewardBlock = block.timestamp;
     }
 
@@ -175,17 +184,19 @@ contract MasterChef is Ownable {
 
 
     // View function to see pending AXORAs on frontend.
-    function pendingAxora(uint256 _pid, address _user) external view returns (uint256) {
+    function pendingAxora(uint256 _pid, address _user) public returns (uint256) {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
-        uint256 accAxoraPerShare = pool.accAxoraPerShare;
+        uint256 _rewardAccrued = user.rewardAccrued;
+        uint256 _userMultiplier = getMultiplier(user.lastInteracted, block.timestamp);
+        uint256 totalAccRewardInUserTimeRange = _userMultiplier.mul(axoraPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
         uint256 lpSupply = pool.lpToken.balanceOf(address(this));
         if (block.timestamp > pool.lastRewardBlock && lpSupply != 0) {
-            uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.timestamp);
-            uint256 AxoraReward = multiplier.mul(axoraPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
-            accAxoraPerShare = accAxoraPerShare.add(AxoraReward.mul(1e12).div(lpSupply));
+            uint256 _reward = user.amount.mul(totalAccRewardInUserTimeRange).div(lpSupply);
+            user.rewardAccrued = _rewardAccrued.add(_reward);
         }
-        return user.amount.mul(accAxoraPerShare).div(1e12).sub(user.rewardDebt);
+        user.lastInteracted = block.timestamp;
+        return user.rewardAccrued;
     }
 
 
@@ -197,18 +208,24 @@ contract MasterChef is Ownable {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
 
+        if (user.amount == 0) {
+            pool.totalDepositors++;
+        }
+
         updatePool(_pid);
+        uint256 pending = pendingAxora(_pid, msg.sender);
+
         if (user.amount > 0) {
-            uint256 pending = user.amount.mul(pool.accAxoraPerShare).div(1e12).sub(user.rewardDebt);
             if (pending > 0) {
                 axora.transfer(msg.sender, pending);
+                user.rewardAccrued = 0;
             }
         }
         if (_amount > 0) {
             pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
             user.amount = user.amount.add(_amount);
         }
-        user.rewardDebt = user.amount.mul(pool.accAxoraPerShare).div(1e12);
+        user.lastInteracted = block.timestamp;
         emit Deposit(msg.sender, _pid, _amount);
     }
 
@@ -223,15 +240,18 @@ contract MasterChef is Ownable {
         require(user.amount >= _amount, "withdraw: not good");
 
         updatePool(_pid);
-        uint256 pending = user.amount.mul(pool.accAxoraPerShare).div(1e12).sub(user.rewardDebt);
+
+        uint256 pending = pendingAxora(_pid, msg.sender);
+
         if (pending > 0) {
             axora.transfer(msg.sender, pending);
+            user.rewardAccrued = 0;
         }
         if (_amount > 0) {
             user.amount = user.amount.sub(_amount);
             pool.lpToken.safeTransfer(address(msg.sender), _amount);
         }
-        user.rewardDebt = user.amount.mul(pool.accAxoraPerShare).div(1e12);
+        user.lastInteracted = block.timestamp;
         emit Withdraw(msg.sender, _pid, _amount);
     }
 
@@ -243,7 +263,8 @@ contract MasterChef is Ownable {
         pool.lpToken.safeTransfer(address(msg.sender), user.amount);
         emit EmergencyWithdraw(msg.sender, _pid, user.amount);
         user.amount = 0;
-        user.rewardDebt = 0;
+        user.rewardAccrued = 0;
+        user.lastInteracted = block.timestamp;
     }
 
     // Update dev address by the previous dev.

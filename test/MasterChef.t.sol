@@ -21,6 +21,7 @@ contract MasterChefTest is Test {
     }
 
     function testAdd() public {
+        masterchef.poolLength();
         masterchef.add(1000, token, true);
     }
 
@@ -53,6 +54,7 @@ contract MasterChefTest is Test {
         testDeposit();
         vm.warp(block.timestamp + 604800);
         masterchef.pendingAxora(0, address(this));
+        token.balanceOf(address(masterchef));
         masterchef.withdraw(0, 50);
     }
 
@@ -69,23 +71,38 @@ contract MasterChefTest is Test {
         masterchef.updatePool(0);
         masterchef.poolInfo(0);
         masterchef.pendingAxora(0, address(this));
+        token.balanceOf(address(masterchef));
     }
 
     function testMultipleDepositAndClaim() public {
         testDeposit();
         masterchef.pendingAxora(0, address(this));
+        token.balanceOf(address(masterchef));
         vm.warp(block.timestamp + 604800);
+        masterchef.pendingAxora(0, address(this));
         vm.startPrank(address(0x01));
         token.mint(200);
         token.approve(address(masterchef), 100);
         masterchef.deposit(0, 100);
         masterchef.pendingAxora(0, address(this));
         masterchef.pendingAxora(0, address(0x01));
+        token.balanceOf(address(masterchef));
         masterchef.poolInfo(0);
-        vm.warp(block.timestamp + 1);
+        vm.warp(block.timestamp + 100);
         masterchef.pendingAxora(0, address(0x01));
         masterchef.pendingAxora(0, address(this));
+        token.balanceOf(address(masterchef));
         vm.stopPrank();
+        vm.startPrank(address(0x02));
+        token.mint(200);
+        token.approve(address(masterchef), 200);
+        masterchef.deposit(0, 200);
+        masterchef.pendingAxora(0, address(this));
+        masterchef.pendingAxora(0, address(0x01));
+        token.balanceOf(address(masterchef));
+        masterchef.poolInfo(0);
+        vm.stopPrank();
+        vm.warp(block.timestamp + 100);
         masterchef.withdraw(0, 50);
         vm.prank(address(0x01));
         masterchef.withdraw(0, 100);
