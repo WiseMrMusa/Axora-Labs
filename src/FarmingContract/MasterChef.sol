@@ -103,7 +103,7 @@ contract MasterChef is Ownable {
         if (_withUpdate) {
             massUpdatePools();
         }
-        uint256 lastRewardBlock = block.timestamp > startBlock ? block.timestamp : startBlock;
+        uint256 lastRewardBlock = block.number > startBlock ? block.number : startBlock;
         totalAllocPoint = totalAllocPoint.add(_allocPoint);
 
         poolInfo.push(PoolInfo({
@@ -165,19 +165,19 @@ contract MasterChef is Ownable {
     // Update reward variables of the given pool to be up-to-date.
     function updatePool(uint256 _pid) public {
         PoolInfo storage pool = poolInfo[_pid];
-        if (block.timestamp <= pool.lastRewardBlock) {
+        if (block.number <= pool.lastRewardBlock) {
             return;
         }
         uint256 lpSupply = pool.lpToken.balanceOf(address(this));
         if (lpSupply == 0) {
-            pool.lastRewardBlock = block.timestamp;
+            pool.lastRewardBlock = block.number;
             return;
         }
-        uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.timestamp);
+        uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
         uint256 poolAxoraReward = multiplier.mul(axoraPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
         axora.mint(poolAxoraReward);
         pool.accAxoraReward = poolAxoraReward;
-        pool.lastRewardBlock = block.timestamp;
+        pool.lastRewardBlock = block.number;
     }
 
 
@@ -188,14 +188,14 @@ contract MasterChef is Ownable {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
         uint256 _rewardAccrued = user.rewardAccrued;
-        uint256 _userMultiplier = getMultiplier(user.lastInteracted, block.timestamp);
+        uint256 _userMultiplier = getMultiplier(user.lastInteracted, block.number);
         uint256 totalAccRewardInUserTimeRange = _userMultiplier.mul(axoraPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
         uint256 lpSupply = pool.lpToken.balanceOf(address(this));
-        if (block.timestamp > pool.lastRewardBlock && lpSupply != 0) {
+        if (block.number > pool.lastRewardBlock && lpSupply != 0) {
             uint256 _reward = user.amount.mul(totalAccRewardInUserTimeRange).div(lpSupply);
             user.rewardAccrued = _rewardAccrued.add(_reward);
         }
-        user.lastInteracted = block.timestamp;
+        user.lastInteracted = block.number;
         return user.rewardAccrued;
     }
 
@@ -225,7 +225,7 @@ contract MasterChef is Ownable {
             pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
             user.amount = user.amount.add(_amount);
         }
-        user.lastInteracted = block.timestamp;
+        user.lastInteracted = block.number;
         emit Deposit(msg.sender, _pid, _amount);
     }
 
@@ -251,7 +251,7 @@ contract MasterChef is Ownable {
             user.amount = user.amount.sub(_amount);
             pool.lpToken.safeTransfer(address(msg.sender), _amount);
         }
-        user.lastInteracted = block.timestamp;
+        user.lastInteracted = block.number;
         emit Withdraw(msg.sender, _pid, _amount);
     }
 
@@ -264,7 +264,7 @@ contract MasterChef is Ownable {
         emit EmergencyWithdraw(msg.sender, _pid, user.amount);
         user.amount = 0;
         user.rewardAccrued = 0;
-        user.lastInteracted = block.timestamp;
+        user.lastInteracted = block.number;
     }
 
     // Update dev address by the previous dev.
