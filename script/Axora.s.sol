@@ -15,7 +15,7 @@ contract AxoraScript is Script {
         uint256 deployerPkey = vm.envUint("PRIVATE_KEY");
         vm.startBroadcast(deployerPkey);
         atoken = new TokenContract();
-        masterchef = new MasterChef(atoken, msg.sender, 5, block.number);
+        masterchef = new MasterChef(atoken, 0xe97a4C739b738e57539566547c3757ecb1bA223a, 5, block.number);
         vm.stopBroadcast();
     }
 }
